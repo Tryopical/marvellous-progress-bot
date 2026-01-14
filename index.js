@@ -1,29 +1,38 @@
 import { Client, GatewayIntentBits, SlashCommandBuilder } from "discord.js";
 import fs from "fs";
 
-const TOTAL = 3948;
 const DATA_FILE = "./progress.json";
 
 if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify({}));
+  fs.writeFileSync(DATA_FILE, JSON.stringify({ total: 3948, users: {} }));
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
 });
 
 const commands = [
   new SlashCommandBuilder()
     .setName("finished")
-    .setDescription("Mark Marvellous Smackdown content as finished")
+    .setDescription("Mark content as finished")
     .addStringOption(opt =>
       opt.setName("title")
-        .setDescription("What you finished")
+        .setDescription("Title you finished")
         .setRequired(true)
     ),
+
   new SlashCommandBuilder()
     .setName("progress")
-    .setDescription("View your Marvellous Smackdown progress")
+    .setDescription("View your current progress"),
+
+  new SlashCommandBuilder()
+    .setName("settotal")
+    .setDescription("Set the total number of shows/movies")
+    .addIntegerOption(opt =>
+      opt.setName("number")
+        .setDescription("New total number")
+        .setRequired(true)
+    )
 ].map(cmd => cmd.toJSON());
 
 client.once("ready", async () => {
@@ -31,32 +40,57 @@ client.once("ready", async () => {
   await client.application.commands.set(commands);
 });
 
-client.on("interactionCreate", interaction => {
+client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const data = JSON.parse(fs.readFileSync(DATA_FILE));
+  const raw = JSON.parse(fs.readFileSync(DATA_FILE));
+  const total = raw.total ?? 0;
+  const users = raw.users ?? {};
+
   const userId = interaction.user.id;
+  if (!users[userId]) users[userId] = { count: 0 };
 
-  if (!data[userId]) data[userId] = { count: 0 };
-
+  // Handle finished
   if (interaction.commandName === "finished") {
-    data[userId].count++;
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    users[userId].count++;
+    raw.users = users;
+    fs.writeFileSync(DATA_FILE, JSON.stringify(raw, null, 2));
 
-    const percent = ((data[userId].count / TOTAL) * 100).toFixed(2);
+    const percent = ((users[userId].count / raw.total) * 100).toFixed(2);
 
-    interaction.reply(
+    return interaction.reply(
       `✅ Finished **${interaction.options.getString("title")}**!\n` +
-      `📊 You have watched **${data[userId].count}/${TOTAL} (${percent}%)**`
+      `📊 You have watched **${users[userId].count}/${raw.total} (${percent}%)**`
     );
   }
 
+  // Handle progress
   if (interaction.commandName === "progress") {
-    const percent = ((data[userId].count / TOTAL) * 100).toFixed(2);
+    const percent = ((users[userId].count / raw.total) * 100).toFixed(2);
 
-    interaction.reply(
-      `📊 Your progress: **${data[userId].count}/${TOTAL} (${percent}%)**`
+    return interaction.reply(
+      `📊 Your progress: **${users[userId].count}/${raw.total} (${percent}%)**`
     );
+  }
+
+  // Handle settotal (role-restricted)
+  if (interaction.commandName === "settotal") {
+    // Check for role
+    const member = await interaction.guild.members.fetch(interaction.user.id);
+    const hasRole = member.roles.cache.some(role => role.name === "Bot Mechanic");
+
+    if (!hasRole) {
+      return interaction.reply({
+        content: "❌ You don’t have permission to change the total.",
+        ephemeral: true
+      });
+    }
+
+    const newTotal = interaction.options.getInteger("number");
+    raw.total = newTotal;
+    fs.writeFileSync(DATA_FILE, JSON.stringify(raw, null, 2));
+
+    return interaction.reply(`✅ Total number of shows/movies set to **${newTotal}**.`);
   }
 });
 

@@ -8,7 +8,10 @@ if (!fs.existsSync(DATA_FILE)) {
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers
+  ]
 });
 
 const commands = [
@@ -44,38 +47,30 @@ client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   const raw = JSON.parse(fs.readFileSync(DATA_FILE));
-  const total = raw.total ?? 0;
   const users = raw.users ?? {};
-
   const userId = interaction.user.id;
   if (!users[userId]) users[userId] = { count: 0 };
 
-  // Handle finished
   if (interaction.commandName === "finished") {
     users[userId].count++;
     raw.users = users;
     fs.writeFileSync(DATA_FILE, JSON.stringify(raw, null, 2));
 
     const percent = ((users[userId].count / raw.total) * 100).toFixed(2);
-
     return interaction.reply(
       `✅ Finished **${interaction.options.getString("title")}**!\n` +
       `📊 You have watched **${users[userId].count}/${raw.total} (${percent}%)**`
     );
   }
 
-  // Handle progress
   if (interaction.commandName === "progress") {
     const percent = ((users[userId].count / raw.total) * 100).toFixed(2);
-
     return interaction.reply(
       `📊 Your progress: **${users[userId].count}/${raw.total} (${percent}%)**`
     );
   }
 
-  // Handle settotal (role-restricted)
   if (interaction.commandName === "settotal") {
-    // Check for role
     const member = await interaction.guild.members.fetch(interaction.user.id);
     const hasRole = member.roles.cache.some(role => role.name === "Bot Mechanic");
 
